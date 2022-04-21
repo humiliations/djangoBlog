@@ -1,7 +1,10 @@
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import User
+from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
-from .forms import UserLoginForm, UserRegisterForm
+from .forms import UserLoginForm, UserRegisterForm, ProfileForm
+from .models import Profile
 
 
 def user_login(request):
@@ -32,8 +35,58 @@ def user_logout(request):
 
 def user_register(request):
     if request.method == "POST":
-        pass
-    elif request.mothod == "GET":
-        pass
+        user_register_form = UserRegisterForm(data=request.POST)
+        if user_register_form.is_valid():
+            new_user = user_register_form.save(commit=False)
+            new_user.set_password(user_register_form.cleaned_data['password'])
+            new_user.save()
+            login(request, new_user)
+            return redirect("article:article_list")
+        else:
+            return HttpResponse("注册表单输入有误，请重新输入")
+    elif request.method == "GET":
+        user_register_form = UserRegisterForm()
+        context = {'form': user_register_form}
+        return render(request, "userprofile/register.html", context)
     else:
         return HttpResponse("使用GET或POST方法请求数据")
+
+
+@login_required(login_url='/userprofile/login/')
+def user_delete(request, id):
+    if request.method == 'POST':
+        user = User.objects.get(id=id)
+        if request.user == user:
+            logout(request)
+            user.delete()
+            return redirect("article:article_list")
+        else:
+            return HttpResponse("无删除操作权限")
+    else:
+        return HttpResponse("仅接受post请求")
+
+
+@login_required(login_url='/userprofile/login/')
+def profile_edit(request, id):
+    user = User.objects.get(id=id)
+    # user_id是OneToOneField自动生成的字段
+    profile = Profile.objects.get(user_id=id)
+
+    if request.method == "POST":
+        if request.user != user:
+            return HttpResponse("你没有权限修改此用户信息")
+        profile_form = ProfileForm(data=request.POST)
+        if profile_form.is_valid():
+            profile_cd = profile_form.cleaned_data
+            profile.phone = profile_cd['phone']
+            profile.bio = profile_cd['bio']
+            profile.save()
+            return redirect("userprofile:edit", id=id)
+        else:
+            return HttpResponse("注册表单输入有误，请重新输入")
+    elif request.method == "GET":
+        profile_form = ProfileForm()
+        context = {'profile_form': profile_form, 'profile': profile, 'user': user}
+        return render(request, "userprofile/edit.html", context)
+    else:
+        return HttpResponse("请使用GET或POST请求数据")
